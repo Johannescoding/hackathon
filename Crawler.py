@@ -3,12 +3,13 @@
 import json
 import requests
 from my_functools import download_wrapper
+import threading
 
 class Crawler:
     """Currently supported: kita, schulen, stadtteile"""
 
     
-    def __init__(self):
+    def __init__(self, preload_cache = True):
         self.version = "beta"
         self.kita_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/9/query?geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
         self.schulen_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/6/query?text=&geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
@@ -16,9 +17,20 @@ class Crawler:
         self.stadtviertel_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtgliederung_15/MapServer/2/query?where=objectid%20is%20not%20null&text=&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=%2A&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=4326&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&f=pjson"
         self.adressen_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Adresse_15/MapServer/0/query?where=objectid%20is%20not%20null&text=&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=%2A&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=4326&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&f=pjson"
         self.behindertenparkplatz_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/0/query?text=&geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
+        self.threads = []
         
-        self.__beta_tester()
+        if preload_cache:
+            t = threading.Thread(target=self._preload_cache)
+            self.threads.append(t)
+            t.start()
 
+    def _preload_cache(self):
+        """loads and precalculates all Data in a new Thread. If needed, instantly available."""
+        self.get_behindertenparkplatz_dict()
+        self.get_kita_dict()
+        self.get_schulen_dict()
+
+        
 
     @download_wrapper
     def get_behindertenparkplatz_dict(self):
@@ -141,22 +153,17 @@ class Crawler:
             stadtteil = feature["attributes"]["STADTTEIL"]
 
             if modus == "behindertenparkplatz":
-                amount = feature["attributes"]["ANZAHL"]
                 try:
+                    amount = feature["attributes"]["ANZAHL"]
                     stadtteile_dict[stadtteil] += amount
                 except KeyError:
-                    pass
+                   pass
+
                 continue
                 
             stadtteile_dict[stadtteil] += 1
         
         return stadtteile_dict
-
-
-    def __beta_tester(self):
-        """beta version disclaimer"""
-        if self.version is "beta":
-            print("Warning: Crawler is still in Beata version. Contact Tim for help.")
 
 
     def __warning_bad_data_quality(self):
