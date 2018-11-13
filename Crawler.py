@@ -4,6 +4,7 @@ import json
 import requests
 from my_functools import download_wrapper
 import threading
+from time import sleep
 
 class Crawler:
     """Currently supported: kita, schulen, stadtteile"""
@@ -23,6 +24,7 @@ class Crawler:
             t = threading.Thread(target=self._preload_cache)
             self.threads.append(t)
             t.start()
+            
 
     def _preload_cache(self):
         """loads and precalculates all Data in a new Thread. If needed, instantly available."""
@@ -30,7 +32,6 @@ class Crawler:
         self.get_kita_dict()
         self.get_schulen_dict()
 
-        
 
     @download_wrapper
     def get_behindertenparkplatz_dict(self):
@@ -139,8 +140,9 @@ class Crawler:
         stadtteile_dict = { anzahl : 0 for anzahl in stadtteile_list } # creates a dict from list with dafaultvalue 0
         
         return (feature_list, stadtteile_dict)
+    
 
-    def _dict_helper(self, link, modus = "behindertenparkplatz"):
+    def _dict_helper(self, link, modus = None):
         """returns a dict. containing stadtteile and value"""
         
         # get json with meta and features
@@ -148,7 +150,7 @@ class Crawler:
 
         # extract the important information 
         feature_list, stadtteile_dict = self._setup(mother_json)
-        
+
         for feature in feature_list:
             stadtteil = feature["attributes"]["STADTTEIL"]
 
@@ -158,9 +160,8 @@ class Crawler:
                     stadtteile_dict[stadtteil] += amount
                 except KeyError:
                    pass
-
                 continue
-                
+            
             stadtteile_dict[stadtteil] += 1
         
         return stadtteile_dict
