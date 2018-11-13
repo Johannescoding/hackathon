@@ -3,25 +3,47 @@
 import json
 import requests
 from my_functools import download_wrapper
+import threading
+from time import sleep
 
 class Crawler:
     """Currently supported: kita, schulen, stadtteile"""
 
     
-    def __init__(self):
+    def __init__(self, preload_cache = True):
         self.version = "beta"
         self.kita_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/9/query?geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
         self.schulen_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/6/query?text=&geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
         self.stadtteile_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtgliederung_15/MapServer/1/query?where=objectid%20is%20not%20null&text=&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=%2A&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=4326&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&f=pjson"
         self.stadtviertel_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtgliederung_15/MapServer/2/query?where=objectid%20is%20not%20null&text=&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=%2A&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=4326&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&f=pjson"
         self.adressen_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Adresse_15/MapServer/0/query?where=objectid%20is%20not%20null&text=&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=%2A&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=4326&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&f=pjson"
+        self.behindertenparkplatz_link = "https://geoportal.stadt-koeln.de/arcgis/rest/services/Stadtplanthemen/MapServer/0/query?text=&geometry=&geometryType=esriGeometryPoint&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&objectIds=&where=objectid%20is%20not%20null&time=&returnCountOnly=false&returnIdsOnly=false&returnGeometry=true&maxAllowableOffset=&outSR=4326&outFields=%2A&f=json"
+        self.threads = []
+        
+        if preload_cache:
+            t = threading.Thread(target=self._preload_cache)
+            self.threads.append(t)
+            t.start()
+            
 
-        self.__beta_tester()
+    def _preload_cache(self):
+        """loads and precalculates all Data in a new Thread. If needed, instantly available."""
+        self.get_behindertenparkplatz_dict()
+        self.get_kita_dict()
+        self.get_schulen_dict()
 
 
     @download_wrapper
+    def get_behindertenparkplatz_dict(self):
+        """"returns a dict. key: stadtteil, value: number of behindertanparkplätze"""
+        
+        stadtteile_dict = self._dict_helper(self.behindertenparkplatz_link, "behindertenparkplatz")             
+        return stadtteile_dict
+        
+
+    @download_wrapper
     def get_schulen_dict(self):
-        """ returns a dict. key: stadtteil, value: number of schulen"""
+        """returns a dict. key: stadtteil, value: number of schulen"""
         stadtteile_dict = self._dict_helper(self.schulen_link)             
         return stadtteile_dict
 
@@ -53,6 +75,9 @@ class Crawler:
     @download_wrapper
     def get_strassen_list(self):
         """liste mit straßen. Ultra schlechter Datensatz!!!"""
+
+        self.__warning_bad_data_quality()
+        
         json_as_dict = self._json_to_python_object(self.stadtteile_link)
 
         # get feature list
@@ -69,6 +94,9 @@ class Crawler:
     @download_wrapper
     def get_straßen_stadtteil_dict(self):
         """returns a dict with streets as key and stadtteil as value"""
+
+        self.__warning_bad_data_quality()
+        
         json_as_dict = self._json_to_python_object(self.adressen_link)
 
         # get feature list
@@ -112,8 +140,9 @@ class Crawler:
         stadtteile_dict = { anzahl : 0 for anzahl in stadtteile_list } # creates a dict from list with dafaultvalue 0
         
         return (feature_list, stadtteile_dict)
+    
 
-    def _dict_helper(self, link):
+    def _dict_helper(self, link, modus = None):
         """returns a dict. containing stadtteile and value"""
         
         # get json with meta and features
@@ -121,16 +150,24 @@ class Crawler:
 
         # extract the important information 
         feature_list, stadtteile_dict = self._setup(mother_json)
-        
+
         for feature in feature_list:
-            feature = stadtbezirk = feature["attributes"]["STADTTEIL"]
-            stadtteile_dict[feature] += 1
+            stadtteil = feature["attributes"]["STADTTEIL"]
+
+            if modus == "behindertenparkplatz":
+                try:
+                    amount = feature["attributes"]["ANZAHL"]
+                    stadtteile_dict[stadtteil] += amount
+                except KeyError:
+                   pass
+                continue
+            
+            stadtteile_dict[stadtteil] += 1
         
         return stadtteile_dict
 
 
-    def __beta_tester(self):
-        """beta version disclaimer"""
-        if self.version is "beta":
-            print("Warning: Crawler is still in Beata version. Contact Tim for help.")
+    def __warning_bad_data_quality(self):
+        """prints warning"""
+        print("Warning: The dataquality is terrible! Not complete dataset might obscure your result")
     
